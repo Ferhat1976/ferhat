@@ -85,6 +85,11 @@
   .item .value { font-weight: 700; direction: ltr; text-align: right; }
   .item .code { font-size: .75rem; font-weight: 700; color: var(--green); }
   h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  .modes { display: flex; gap: 0; margin-bottom: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .modes button { flex: 1; border-radius: 0; background: #fff; color: var(--text); padding: 10px; }
+  .modes button.active { background: var(--green); color: #fff; }
+  .modes button[data-mode="square"].active { background: var(--red); }
+  .square-line { margin-top: 8px; font-size: 1rem; color: var(--red); font-weight: 700; }
   footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 16px; }
 </style>
 </head>
@@ -98,6 +103,10 @@
 
 <main>
   <section class="card">
+    <div class="modes" role="tablist">
+      <button data-mode="official" class="active">🏦 السعر الرسمي (البنك)</button>
+      <button data-mode="square">💵 السوق الموازية (السكوار)</button>
+    </div>
     <label for="amount" id="amountLabel">المبلغ بالدينار الجزائري (DZD)</label>
     <div class="row">
       <input type="number" id="amount" value="1000" min="0" step="any" inputmode="decimal">
@@ -116,7 +125,7 @@
 </main>
 
 <footer>
-  الأسعار رسمية (سعر البنك) وللاستئناس فقط، وقد تختلف عن أسعار السوق الموازية (السكوار).
+  جميع الأسعار للاستئناس فقط. أسعار السكوار تقريبية وتتغير يومياً، فتحقق منها قبل أي عملية صرف.
 </footer>
 
 <script>
@@ -152,8 +161,12 @@
   const amountEl = $("amount"), currencyEl = $("currency"), resultEl = $("result"),
         statusEl = $("status"), listEl = $("list"), searchEl = $("search");
 
-  let rates = {};
-  let reverse = false; // false: DZD -> X, true: X -> DZD
+  let officialRates = {};
+  let squareRates = {};   // 1 DZD = x (computed from square prices)
+  let squareDate = "";
+  let mode = "official";  // "official" | "square"
+  let reverse = false;
+  const R = () => mode === "square" ? squareRates : officialRates; // false: DZD -> X, true: X -> DZD
 
   const names = (() => {
     try { return new Intl.DisplayNames(["ar"], { type: "currency" }); } catch { return null; }
@@ -179,6 +192,7 @@
   };
 
   function sortedCodes() {
+    const rates = R();
     const codes = Object.keys(rates).filter(c => c !== "DZD" && rates[c] > 0);
     const pop = POPULAR.filter(c => codes.includes(c));
     const rest = codes.filter(c => !POPULAR.includes(c)).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "ar"));
@@ -194,13 +208,13 @@
       opt.textContent = `${flagOf(code)} ${code} — ${nameOf(code)}`;
       currencyEl.appendChild(opt);
     }
-    currencyEl.value = rates[current] ? current : "EUR";
+    currencyEl.value = R()[current] ? current : "EUR";
   }
 
   function update() {
     const amount = parseFloat(amountEl.value) || 0;
     const code = currencyEl.value;
-    const rate = rates[code];
+    const rate = R()[code];
     if (!rate) { resultEl.textContent = "—"; return; }
 
     if (!reverse) {
@@ -210,6 +224,12 @@
       resultEl.innerHTML = `${fmt(amount / rate)} DZD
         <small>1 ${code} = ${fmt(1 / rate)} DZD · 1 DZD = ${fmt(rate)} ${code}</small>`;
     }
+    // In official mode, also show the square-market equivalent when we have it
+    const sq = squareRates[code];
+    if (mode === "official" && sq) {
+      const v = reverse ? `${fmt(amount / sq)} DZD` : `${fmt(amount * sq)} ${code}`;
+      resultEl.innerHTML += `<div class="square-line">💵 في السكوار: ${v} <small>(1 ${code} ≈ ${fmt(1 / sq)} DZD)</small></div>`;
+    }
     renderList();
   }
 
@@ -217,8 +237,11 @@
     const amount = parseFloat(amountEl.value) || 0;
     const q = searchEl.value.trim().toLowerCase();
     // In reverse mode the list still shows the DZD amount converted to every currency
+    const rates = R();
     const dzd = reverse ? amount / (rates[currencyEl.value] || 1) : amount;
-    $("listTitle").textContent = `قيمة ${fmt(dzd)} دج في جميع العملات`;
+    $("listTitle").textContent = mode === "square"
+      ? `قيمة ${fmt(dzd)} دج في السكوار`
+      : `قيمة ${fmt(dzd)} دج في جميع العملات`;
 
     const frag = document.createDocumentFragment();
     for (const code of sortedCodes()) {
@@ -246,11 +269,11 @@
         if (!res.ok) continue;
         const data = src.parse(await res.json());
         if (data && data.rates && Object.keys(data.rates).length > 10) {
-          rates = data.rates;
+          officialRates = data.rates;
           const date = data.date ? new Date(data.date) : null;
-          statusEl.textContent = `✅ أسعار محدّثة — ${Object.keys(rates).length - 1} عملة` +
+          statusEl.textContent = `✅ أسعار محدّثة — ${Object.keys(officialRates).length - 1} عملة` +
             (date && !isNaN(date) ? ` · آخر تحديث: ${date.toLocaleDateString("ar-DZ")}` : "");
-          localStorage.setItem("dzdRates", JSON.stringify({ rates, saved: Date.now() }));
+          localStorage.setItem("dzdRates", JSON.stringify({ rates: officialRates, saved: Date.now() }));
           return;
         }
       } catch (e) { /* try next source */ }
@@ -259,14 +282,38 @@
     // Offline: use last saved rates, then built-in approximate rates
     const saved = JSON.parse(localStorage.getItem("dzdRates") || "null");
     if (saved && saved.rates) {
-      rates = saved.rates;
+      officialRates = saved.rates;
       statusEl.textContent = `⚠️ لا يوجد اتصال — تُستخدم آخر أسعار محفوظة (${new Date(saved.saved).toLocaleDateString("ar-DZ")})`;
     } else {
-      rates = FALLBACK_RATES;
+      officialRates = FALLBACK_RATES;
       statusEl.textContent = "⚠️ لا يوجد اتصال — تُستخدم أسعار تقريبية مدمجة";
     }
     statusEl.classList.add("error");
   }
+
+  // Square (parallel market) prices: DZD per 1 unit, kept in square-rates.json
+  const SQUARE_FALLBACK = { updated: "2026-11-05", rates: { EUR: 275, USD: 241, GBP: 316, CAD: 172, SAR: 64 } };
+
+  async function loadSquare() {
+    let data = SQUARE_FALLBACK;
+    try {
+      const res = await fetch("square-rates.json", { cache: "no-cache" });
+      if (res.ok) { const d = await res.json(); if (d && d.rates) data = d; }
+    } catch (e) { /* use built-in values */ }
+    squareRates = {};
+    for (const [code, price] of Object.entries(data.rates)) {
+      if (price > 0) squareRates[code] = 1 / price;
+    }
+    squareDate = data.updated || "";
+  }
+
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll(".modes button").forEach(b => b.classList.toggle("active", b.dataset.mode === m));
+    fillSelect();
+    update();
+  }
+  document.querySelectorAll(".modes button").forEach(b => b.onclick = () => setMode(b.dataset.mode));
 
   $("swap").onclick = () => {
     reverse = !reverse;
@@ -279,7 +326,13 @@
   currencyEl.addEventListener("change", update);
   searchEl.addEventListener("input", renderList);
 
-  loadRates().then(() => { fillSelect(); update(); });
+  Promise.all([loadRates(), loadSquare()]).then(() => {
+    if (squareDate) {
+      $("status").insertAdjacentHTML("beforeend",
+        `<br>💵 أسعار السكوار تقريبية — آخر تحديث: ${new Date(squareDate).toLocaleDateString("ar-DZ")}`);
+    }
+    fillSelect(); update();
+  });
 </script>
 </body>
 </html>
