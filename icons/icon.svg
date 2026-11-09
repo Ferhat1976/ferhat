@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#006233"/>
+  <rect x="256" width="256" height="512" fill="#ffffff"/>
+  <circle cx="256" cy="256" r="190" fill="#ffffff" stroke="#d21034" stroke-width="18"/>
+  <text x="256" y="300" text-anchor="middle" font-family="Noto Sans Arabic, Arial, sans-serif" font-weight="800" font-size="150" fill="#006233">دج</text>
+  <text x="256" y="390" text-anchor="middle" font-family="Arial, sans-serif" font-weight="700" font-size="56" fill="#d21034">⇄</text>
+</svg>
