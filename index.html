@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>محوّل الدينار الجزائري</title>
+<style>
+  :root {
+    --green: #006233;
+    --red: #d21034;
+    --bg: #f4f6f5;
+    --card: #ffffff;
+    --text: #1d2521;
+    --muted: #6b7570;
+    --border: #e1e6e3;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", Tahoma, "Noto Sans Arabic", Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+  }
+  header .inner {
+    background: var(--green);
+    color: #fff;
+    text-align: center;
+    padding: 20px 16px;
+    border-bottom: 4px solid var(--red);
+  }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  header p { margin: 6px 0 0; opacity: .85; font-size: .95rem; }
+  main { max-width: 760px; margin: 0 auto; padding: 16px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+    margin-bottom: 16px;
+    box-shadow: 0 2px 6px rgba(0,0,0,.04);
+  }
+  label { display: block; font-weight: 600; margin-bottom: 6px; }
+  .row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+  input, select, button {
+    font: inherit;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    padding: 12px;
+  }
+  input[type="number"] { flex: 1 1 200px; font-size: 1.4rem; font-weight: 700; direction: ltr; text-align: right; }
+  select { flex: 1 1 200px; background: #fff; }
+  button {
+    background: var(--green);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  button:hover { filter: brightness(1.1); }
+  .result {
+    margin-top: 14px;
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: var(--green);
+    text-align: center;
+    direction: ltr;
+  }
+  .result small { display: block; font-size: .9rem; color: var(--muted); font-weight: 400; margin-top: 4px; }
+  .status { font-size: .85rem; color: var(--muted); text-align: center; margin-top: 10px; }
+  .status.error { color: var(--red); }
+  #search { width: 100%; margin-bottom: 12px; }
+  .list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+  .item {
+    display: flex; align-items: center; gap: 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+    cursor: pointer;
+    background: #fff;
+  }
+  .item:hover { border-color: var(--green); }
+  .item .flag { font-size: 1.6rem; line-height: 1; }
+  .item .info { flex: 1; min-width: 0; }
+  .item .name { font-size: .85rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .value { font-weight: 700; direction: ltr; text-align: right; }
+  .item .code { font-size: .75rem; font-weight: 700; color: var(--green); }
+  h2 { margin: 0 0 12px; font-size: 1.1rem; }
+  footer { text-align: center; color: var(--muted); font-size: .8rem; padding: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="inner">
+    <h1>🇩🇿 محوّل الدينار الجزائري</h1>
+    <p>حوّل الدينار الجزائري (DZD) إلى جميع عملات العالم</p>
+  </div>
+</header>
+
+<main>
+  <section class="card">
+    <label for="amount" id="amountLabel">المبلغ بالدينار الجزائري (DZD)</label>
+    <div class="row">
+      <input type="number" id="amount" value="1000" min="0" step="any" inputmode="decimal">
+      <select id="currency" aria-label="العملة"></select>
+      <button id="swap" title="عكس اتجاه التحويل">⇄ عكس</button>
+    </div>
+    <div class="result" id="result">…</div>
+    <div class="status" id="status">جارٍ تحميل أسعار الصرف…</div>
+  </section>
+
+  <section class="card">
+    <h2 id="listTitle">قيمة المبلغ في جميع العملات</h2>
+    <input type="search" id="search" placeholder="ابحث عن عملة أو دولة… (مثال: يورو، USD، ريال)">
+    <div class="list" id="list"></div>
+  </section>
+</main>
+
+<footer>
+  الأسعار رسمية (سعر البنك) وللاستئناس فقط، وقد تختلف عن أسعار السوق الموازية (السكوار).
+</footer>
+
+<script>
+  // Popular currencies shown first
+  const POPULAR = ["EUR", "USD", "GBP", "SAR", "AED", "TND", "MAD", "QAR", "KWD", "TRY", "CAD", "CHF", "CNY", "EGP"];
+
+  // Used only if every online source fails (approximate, 1 DZD = x)
+  const FALLBACK_RATES = {
+    DZD: 1, EUR: 0.0067, USD: 0.0076, GBP: 0.0058, SAR: 0.0285, AED: 0.0279, TND: 0.0226,
+    MAD: 0.0700, QAR: 0.0277, KWD: 0.00233, TRY: 0.31, CAD: 0.0106, CHF: 0.0061,
+    CNY: 0.054, EGP: 0.37, JPY: 1.15, LYD: 0.041, MRU: 0.30
+  };
+
+  const SOURCES = [
+    {
+      url: "https://open.er-api.com/v6/latest/DZD",
+      parse: d => d && d.result === "success" ? { rates: d.rates, date: d.time_last_update_utc } : null
+    },
+    {
+      url: "https://cdn.jsdelivr.net/npm/@fawazahmed0/currency-api@latest/v1/currencies/dzd.json",
+      parse: d => {
+        if (!d || !d.dzd) return null;
+        const rates = {};
+        for (const [k, v] of Object.entries(d.dzd)) {
+          if (/^[a-z]{3}$/.test(k)) rates[k.toUpperCase()] = v;
+        }
+        return { rates, date: d.date };
+      }
+    }
+  ];
+
+  const $ = id => document.getElementById(id);
+  const amountEl = $("amount"), currencyEl = $("currency"), resultEl = $("result"),
+        statusEl = $("status"), listEl = $("list"), searchEl = $("search");
+
+  let rates = {};
+  let reverse = false; // false: DZD -> X, true: X -> DZD
+
+  const names = (() => {
+    try { return new Intl.DisplayNames(["ar"], { type: "currency" }); } catch { return null; }
+  })();
+  const nameOf = code => {
+    try { return (names && names.of(code)) || code; } catch { return code; }
+  };
+
+  // Flag emoji from currency code (first two letters usually = country code)
+  const flagOf = code => {
+    const special = { EUR: "🇪🇺", XAF: "🌍", XOF: "🌍", XCD: "🌎", XPF: "🌏", ANG: "🇨🇼", BTC: "₿" };
+    if (special[code]) return special[code];
+    if (code.startsWith("X")) return "💱";
+    const cc = code.slice(0, 2);
+    return String.fromCodePoint(...[...cc].map(c => 0x1F1E6 + c.charCodeAt(0) - 65));
+  };
+
+  const fmt = n => {
+    if (!isFinite(n)) return "—";
+    const abs = Math.abs(n);
+    const digits = abs === 0 ? 2 : abs < 0.01 ? 6 : abs < 1 ? 4 : 2;
+    return n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: digits });
+  };
+
+  function sortedCodes() {
+    const codes = Object.keys(rates).filter(c => c !== "DZD" && rates[c] > 0);
+    const pop = POPULAR.filter(c => codes.includes(c));
+    const rest = codes.filter(c => !POPULAR.includes(c)).sort((a, b) => nameOf(a).localeCompare(nameOf(b), "ar"));
+    return [...pop, ...rest];
+  }
+
+  function fillSelect() {
+    const current = currencyEl.value || "EUR";
+    currencyEl.innerHTML = "";
+    for (const code of sortedCodes()) {
+      const opt = document.createElement("option");
+      opt.value = code;
+      opt.textContent = `${flagOf(code)} ${code} — ${nameOf(code)}`;
+      currencyEl.appendChild(opt);
+    }
+    currencyEl.value = rates[current] ? current : "EUR";
+  }
+
+  function update() {
+    const amount = parseFloat(amountEl.value) || 0;
+    const code = currencyEl.value;
+    const rate = rates[code];
+    if (!rate) { resultEl.textContent = "—"; return; }
+
+    if (!reverse) {
+      resultEl.innerHTML = `${fmt(amount * rate)} ${code}
+        <small>1 DZD = ${fmt(rate)} ${code} · 1 ${code} = ${fmt(1 / rate)} DZD</small>`;
+    } else {
+      resultEl.innerHTML = `${fmt(amount / rate)} DZD
+        <small>1 ${code} = ${fmt(1 / rate)} DZD · 1 DZD = ${fmt(rate)} ${code}</small>`;
+    }
+    renderList();
+  }
+
+  function renderList() {
+    const amount = parseFloat(amountEl.value) || 0;
+    const q = searchEl.value.trim().toLowerCase();
+    // In reverse mode the list still shows the DZD amount converted to every currency
+    const dzd = reverse ? amount / (rates[currencyEl.value] || 1) : amount;
+    $("listTitle").textContent = `قيمة ${fmt(dzd)} دج في جميع العملات`;
+
+    const frag = document.createDocumentFragment();
+    for (const code of sortedCodes()) {
+      const name = nameOf(code);
+      if (q && !code.toLowerCase().includes(q) && !name.toLowerCase().includes(q)) continue;
+      const div = document.createElement("div");
+      div.className = "item";
+      div.innerHTML = `<span class="flag">${flagOf(code)}</span>
+        <div class="info">
+          <div class="code">${code}</div>
+          <div class="name" title="${name}">${name}</div>
+        </div>
+        <div class="value">${fmt(dzd * rates[code])}</div>`;
+      div.onclick = () => { currencyEl.value = code; update(); window.scrollTo({ top: 0, behavior: "smooth" }); };
+      frag.appendChild(div);
+    }
+    listEl.replaceChildren(frag);
+    if (!listEl.children.length) listEl.innerHTML = `<p style="color:var(--muted)">لا توجد نتائج</p>`;
+  }
+
+  async function loadRates() {
+    for (const src of SOURCES) {
+      try {
+        const res = await fetch(src.url);
+        if (!res.ok) continue;
+        const data = src.parse(await res.json());
+        if (data && data.rates && Object.keys(data.rates).length > 10) {
+          rates = data.rates;
+          const date = data.date ? new Date(data.date) : null;
+          statusEl.textContent = `✅ أسعار محدّثة — ${Object.keys(rates).length - 1} عملة` +
+            (date && !isNaN(date) ? ` · آخر تحديث: ${date.toLocaleDateString("ar-DZ")}` : "");
+          localStorage.setItem("dzdRates", JSON.stringify({ rates, saved: Date.now() }));
+          return;
+        }
+      } catch (e) { /* try next source */ }
+    }
+
+    // Offline: use last saved rates, then built-in approximate rates
+    const saved = JSON.parse(localStorage.getItem("dzdRates") || "null");
+    if (saved && saved.rates) {
+      rates = saved.rates;
+      statusEl.textContent = `⚠️ لا يوجد اتصال — تُستخدم آخر أسعار محفوظة (${new Date(saved.saved).toLocaleDateString("ar-DZ")})`;
+    } else {
+      rates = FALLBACK_RATES;
+      statusEl.textContent = "⚠️ لا يوجد اتصال — تُستخدم أسعار تقريبية مدمجة";
+    }
+    statusEl.classList.add("error");
+  }
+
+  $("swap").onclick = () => {
+    reverse = !reverse;
+    $("amountLabel").textContent = reverse
+      ? "المبلغ بالعملة المختارة (يُحوَّل إلى الدينار الجزائري)"
+      : "المبلغ بالدينار الجزائري (DZD)";
+    update();
+  };
+  amountEl.addEventListener("input", update);
+  currencyEl.addEventListener("change", update);
+  searchEl.addEventListener("input", renderList);
+
+  loadRates().then(() => { fillSelect(); update(); });
+</script>
+</body>
+</html>
